@@ -1,6 +1,7 @@
 #include "MultithreadedMain.h"
 
 #include <thread>
+#include <vector>
 #include <cmath>
 #include <algorithm>
 #include <chrono>
@@ -32,70 +33,84 @@ static std::vector<Body> init_random_bodies(int N, unsigned seed = 42) {
     return bodies;
 }
 
-static void compute_acc_range(
+static void computeAccelerationsRange(
     const std::vector<Body>& bodies,
-    int start, int end,
-    double G, double eps,
-    std::vector<Vector2D>& acc
+    int start,
+    int end,
+    double G,
+    double minDistance,
+    std::vector<Vector2D>& accelerations
 ) {
-    const int n = (int)bodies.size();
-    const double eps2 = eps * eps;
+    int bodyCount = (int)bodies.size();
 
-    for (int i = start; i < end; i++) {
-        Vector2D a(0.0, 0.0);
-        const double xi = bodies[i].position.x;
-        const double yi = bodies[i].position.y;
+    for (int i = start; i < end; i++)
+    {
+        Vector2D totalForce(0.0, 0.0);
 
-        for (int j = 0; j < n; j++) {
-            if (j == i) continue;
+        for (int j = 0; j < bodyCount; j++)
+        {
+            if (i == j) continue;
 
-            double dx = bodies[j].position.x - xi;
-            double dy = bodies[j].position.y - yi;
+            Vector2D vectorToOtherBody = bodies[j].position - bodies[i].position;
 
-            double dist2 = dx*dx + dy*dy + eps2;
+            double distance = std::sqrt(
+                vectorToOtherBody.x * vectorToOtherBody.x +
+                vectorToOtherBody.y * vectorToOtherBody.y
+            );
 
-            double invDist = 1.0 / std::sqrt(dist2);
-            double invDist3 = invDist * invDist * invDist;
+            if (distance < minDistance) distance = minDistance;
 
-            double mj = bodies[j].mass;
-            double s = G * mj * invDist3;
+            Vector2D unitDirection = vectorToOtherBody / distance;
 
-            a.x += dx * s;
-            a.y += dy * s;
+            // Newton: F = G * (m_i * m_j) / r^2   and   a = F / m_i
+            double forceStrength =
+                (G * bodies[i].mass * bodies[j].mass) / (distance * distance);
+
+            totalForce += unitDirection * forceStrength;
         }
-        acc[i] = a;
+
+        accelerations[i] = totalForce / bodies[i].mass;
     }
 }
 
-static void integrate_range(
+static void integrateRange(
     std::vector<Body>& bodies,
-    int start, int end,
-    const std::vector<Vector2D>& acc,
+    int start,
+    int end,
+    const std::vector<Vector2D>& accelerations,
     double dt
 ) {
-    for (int i = start; i < end; i++) {
-        bodies[i].velocity.x += acc[i].x * dt;
-        bodies[i].velocity.y += acc[i].y * dt;
-        bodies[i].position.x += bodies[i].velocity.x * dt;
-        bodies[i].position.y += bodies[i].velocity.y * dt;
+    for (int i = start; i < end; i++)
+    {
+        bodies[i].velocity += accelerations[i] * dt;
+        bodies[i].position += bodies[i].velocity * dt;
     }
 }
 
-void MultithreadedMain::step_threaded(std::vector<Body>& bodies, double dt, double G, double eps, int threads) {
+void MultithreadedMain::step_threaded(
+    std::vector<Body>& bodies,
+    double dt,
+    double G,
+    double eps,
+    int threads
+) {
     const int n = (int)bodies.size();
     if (n == 0) return;
 
     int T = std::max(1, threads);
     T = std::min(T, n);
 
-    std::vector<Vector2D> acc(n, Vector2D(0.0, 0.0));
+    std::vector<Vector2D> accelerations(n, Vector2D(0.0, 0.0));
     std::vector<std::thread> pool;
     pool.reserve(T);
 
     for (int t = 0; t < T; t++) {
         int start = (t * n) / T;
         int end   = ((t + 1) * n) / T;
-        pool.emplace_back([&, start, end] { compute_acc_range(bodies, start, end, G, eps, acc); });
+
+        pool.emplace_back([&, start, end] {
+            computeAccelerationsRange(bodies, start, end, G, eps, accelerations);
+        });
     }
     for (auto& th : pool) th.join();
 
@@ -103,20 +118,31 @@ void MultithreadedMain::step_threaded(std::vector<Body>& bodies, double dt, doub
     for (int t = 0; t < T; t++) {
         int start = (t * n) / T;
         int end   = ((t + 1) * n) / T;
-        pool.emplace_back([&, start, end] { integrate_range(bodies, start, end, acc, dt); });
+
+        pool.emplace_back([&, start, end] {
+            integrateRange(bodies, start, end, accelerations, dt);
+        });
     }
     for (auto& th : pool) th.join();
 }
 
-double MultithreadedMain::run_multithreaded(std::vector<Body>& bodies, int steps, double dt, double G, double eps, int threads) {
+double MultithreadedMain::run_multithreaded(
+    std::vector<Body>& bodies,
+    int steps,
+    double dt,
+    double G,
+    double eps,
+    int threads
+) {
     auto t0 = std::chrono::high_resolution_clock::now();
-    for (int s = 0; s < steps; s++) step_threaded(bodies, dt, G, eps, threads);
+    for (int s = 0; s < steps; s++) {
+        step_threaded(bodies, dt, G, eps, threads);
+    }
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double>(t1 - t0).count();
 }
 
 void MultithreadedMain::executeMain() {
-    // Simple defaults (you can later parse from argv if you want)
     int N = 1000;
     int steps = 200;
     double dt = 0.01;

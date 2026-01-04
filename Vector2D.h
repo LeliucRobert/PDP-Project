@@ -16,6 +16,8 @@ public:
     Vector2D operator*(double scalar) const;
 
     Vector2D& operator+=(const Vector2D& other);
+    Vector2D operator/(double scalar) const;
+
 
     double norm2() const;      // x^2 + y^2 (fast)
     double magnitude() const;  // sqrt(norm2())

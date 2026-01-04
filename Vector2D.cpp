@@ -22,6 +22,10 @@ Vector2D& Vector2D::operator+=(const Vector2D& other) {
     return *this;
 }
 
+Vector2D Vector2D::operator/(double scalar) const {
+    return Vector2D(x / scalar, y / scalar);
+}
+
 double Vector2D::norm2() const {
     return x * x + y * y;
 }
