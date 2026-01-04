@@ -25,7 +25,7 @@ static std::vector<Body> init_random_bodies(int N, unsigned seed = 42) {
     std::uniform_real_distribution<double> massDist(0.5, 2.0);
 
     for (auto& b : bodies) {
-        b.mass = (unsigned int)massDist(gen);
+        b.mass = massDist(gen);
         b.position = Vector2D(posDist(gen), posDist(gen));
         b.velocity = Vector2D(velDist(gen), velDist(gen));
     }
@@ -57,7 +57,7 @@ static void compute_acc_range(
             double invDist = 1.0 / std::sqrt(dist2);
             double invDist3 = invDist * invDist * invDist;
 
-            double mj = static_cast<double>(bodies[j].mass);
+            double mj = bodies[j].mass;
             double s = G * mj * invDist3;
 
             a.x += dx * s;
